@@ -443,7 +443,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 				}
 			}
 			if readerErr != nil {
-				fmt.Fprintf(stderr, "Error reading input: %v\n", readerErr)
+				_, _ = fmt.Fprintf(stderr, "Error reading input: %v\n", readerErr)
 			}
 			readerDone <- readerErr
 		}()

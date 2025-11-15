@@ -224,7 +224,7 @@ func TestAutomatic_Parsing_WithCommand(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", row.Err)
 		}
 		count++
-		fmt.Fprintf(output, "%s: %s\n", row.Data.Level, row.Data.Message)
+		_, _ = fmt.Fprintf(output, "%s: %s\n", row.Data.Level, row.Data.Message)
 	}
 	<-doneCh
 

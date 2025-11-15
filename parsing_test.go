@@ -32,7 +32,7 @@ func (e *ParsedLog) ParseRow(line string) error {
 }
 
 func TestRowParser_Interface(t *testing.T) {
-	input := strings.NewReader("ERROR: Something went wrong\nINFO: All good\nWARN: Be careful\n")
+	input := strings.NewReader("ERROR: Something went wrong\nINFO: all good\nWARN: Be careful\n")
 	ch := make(chan gloo.Row[ParsedLog], 100)
 
 	ctx := context.Background()
@@ -265,4 +265,3 @@ func TestRowParser_ParseErrors(t *testing.T) {
 		t.Errorf("Expected 1 parse error, got %d", errors)
 	}
 }
-

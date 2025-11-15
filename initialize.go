@@ -133,7 +133,7 @@ func openAsFilesGeneric[T any, O any](inputs Inputs[T, O]) Inputs[T, O] {
 
 		if filenameStr == "-" {
 			if stdinSeen {
-				slog.Warn("Multiple stdin sources")
+				slog.Warn("multiple stdin sources")
 				continue
 			}
 			stdinSeen = true

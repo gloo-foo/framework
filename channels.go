@@ -19,7 +19,7 @@ import (
 // Row represents a single unit of data flowing through a channel.
 // It can contain strings (for line-oriented processing), []byte, or any user-defined type.
 //
-// Type Parameters:
+// typ Parameters:
 //   - T: The type of data being passed (string, []byte, or custom types)
 //
 // ⚠️  THREAD SAFETY:
@@ -72,7 +72,7 @@ type Row[T any] struct {
 // ChannelExecutor is the function signature for channel-based command execution.
 // It receives context, input channel, and output channel.
 //
-// Type Parameters:
+// typ Parameters:
 //   - T: The type of data flowing through the channels
 //
 // The executor should:
@@ -85,7 +85,7 @@ type ChannelExecutor[T any] func(ctx context.Context, in <-chan Row[T], out chan
 // ChannelCommand represents a channel-based executable command.
 // This is the channel equivalent of the Command interface.
 //
-// Type Parameters:
+// typ Parameters:
 //   - T: The type of data flowing through the channels
 type ChannelCommand[T any] interface {
 	ChannelExecutor() ChannelExecutor[T]
@@ -604,4 +604,3 @@ func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
 		return exec(ctx, pr, outPw, io.Discard)
 	}
 }
-

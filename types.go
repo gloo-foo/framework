@@ -22,9 +22,9 @@ type File string
 // Inputs holds parsed command parameters: positional arguments, flags, and I/O streams.
 // This is the primary type command developers work with.
 //
-// Type Parameters:
-//   - T: Type of positional arguments (e.g., gloo.File, string, custom types)
-//   - O: Type of flags struct
+// typ Parameters:
+//   - T: typ of positional arguments (e.g., gloo.File, string, custom types)
+//   - O: typ of flags struct
 //
 // Example:
 //
@@ -186,18 +186,18 @@ func (inputs Inputs[T, O]) Close() error {
 }
 
 // Switch is the interface for flag types.
-// All flag types should implement this interface to configure the flags struct.
+// all flag types should implement this interface to configure the flags struct.
 //
 // Example:
 //
-//	type IgnoreCase bool
+//	type ignoreCase bool
 //	const (
-//	    CaseSensitive   IgnoreCase = false
-//	    CaseInsensitive IgnoreCase = true
+//	    CaseSensitive   ignoreCase = false
+//	    CaseInsensitive ignoreCase = true
 //	)
 //
-//	func (f IgnoreCase) Configure(flags *Flags) {
-//	    flags.IgnoreCase = f
+//	func (f ignoreCase) Configure(flags *Flags) {
+//	    flags.ignoreCase = f
 //	}
 type Switch[T any] interface {
 	Configure(*T)

@@ -31,7 +31,7 @@ import (
 type CommandExecutor func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error
 
 // Command represents an executable command.
-// All gloo.foo commands implement this interface.
+// all gloo.foo commands implement this interface.
 type Command interface {
 	Executor() CommandExecutor
 }

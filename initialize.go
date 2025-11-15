@@ -21,14 +21,14 @@ import (
 // Example:
 //
 //	func Cat(parameters ...any) gloo.Command {
-//	    inputs := gloo.Initialize[gloo.File, Flags](parameters...)
+//	    inputs := gloo.Initialize[gloo.File, flags](parameters...)
 //	    return command(inputs)
 //	}
 //
 // Custom types:
 //
 //	type DirPath string  // Command-defined type
-//	inputs := gloo.Initialize[DirPath, Flags](parameters...)
+//	inputs := gloo.Initialize[DirPath, flags](parameters...)
 func Initialize[T any, O any](parameters ...any) Inputs[T, O] {
 	inputs := args[T, O](parameters...)
 

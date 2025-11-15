@@ -305,4 +305,3 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 		}
 	}
 }
-

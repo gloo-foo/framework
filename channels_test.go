@@ -493,4 +493,3 @@ func TestCommand_ChannelIntegration(t *testing.T) {
 		t.Errorf("Expected %q, got %q", expected, output.String())
 	}
 }
-

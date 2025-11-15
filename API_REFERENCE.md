@@ -73,7 +73,7 @@ func MyCommand(params ...any) gloo.Command {
 
 ```go
 // Parse parameters into positionals and flags
-func Initialize[T any, O any](parameters ...any) Inputs[T, O]
+func Initialize[T any, O any](parameters ...any) CommandInputs[T, O]
 ```
 
 **Type Parameters:**
@@ -109,7 +109,7 @@ inputs := gloo.Initialize[gloo.File, Flags](params...)
 #### Inputs
 
 ```go
-type Inputs[T any, O any] struct {
+type CommandInputs[T any, O any] struct {
     Positional []T      // Parsed positional arguments
     Flags      O        // Parsed flags
     Ambiguous  []any    // Arguments that couldn't be parsed
@@ -120,13 +120,13 @@ type Inputs[T any, O any] struct {
 
 ```go
 // Get combined reader from all files (or stdin if no files)
-func (inputs Inputs[T, O]) Reader(stdin io.Reader) io.Reader
+func (inputs CommandInputs[T, O]) Reader(stdin io.Reader) io.Reader
 
 // Wrap an executor to use parsed inputs
-func (inputs Inputs[T, O]) Wrap(executor CommandExecutor) CommandExecutor
+func (inputs CommandInputs[T, O]) Wrap(executor CommandExecutor) CommandExecutor
 
 // Close opened files
-func (inputs Inputs[T, O]) Close() error
+func (inputs CommandInputs[T, O]) Close() error
 ```
 
 ### Flags
@@ -275,7 +275,7 @@ type Flags struct {
 // Command
 type command struct {
     pattern string
-    inputs  gloo.Inputs[gloo.File, Flags]
+    inputs  gloo.CommandInputs[gloo.File, Flags]
 }
 
 func Grep(pattern string, params ...any) gloo.Command {

@@ -196,7 +196,7 @@ func (inputs Inputs[T, O]) Close() error {
 //	    CaseInsensitive ignoreCase = true
 //	)
 //
-//	func (f ignoreCase) Configure(flags *Flags) {
+//	func (f ignoreCase) Configure(flags *flags) {
 //	    flags.ignoreCase = f
 //	}
 type Switch[T any] interface {

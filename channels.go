@@ -347,7 +347,8 @@ func byteChannelToWriter(ctx context.Context, in <-chan Row[[]byte], w io.Writer
 			if _, err := w.Write(row.Data); err != nil {
 				return err
 			}
-			if _, err := w.Write([]byte("\n")); err != nil {
+			if _, err := w.Write([]byte("\n"),
+			); err != nil {
 				return err
 			}
 		}
@@ -479,7 +480,8 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 						writerErr = err
 						break
 					}
-					if _, err := stdout.Write([]byte("\n")); err != nil {
+					if _, err := stdout.Write([]byte("\n"),
+					); err != nil {
 						writerErr = err
 						break
 					}
@@ -545,7 +547,8 @@ func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
 						pw.CloseWithError(err)
 						return
 					}
-					if _, err := pw.Write([]byte("\n")); err != nil {
+					if _, err := pw.Write([]byte("\n"),
+					); err != nil {
 						pw.CloseWithError(err)
 						return
 					}

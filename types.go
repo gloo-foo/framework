@@ -115,6 +115,59 @@ func (inputs Inputs[T, O]) Wrap(executor CommandExecutor) CommandExecutor {
 	}
 }
 
+// ============================================================================
+// Channel-Based Methods
+// ============================================================================
+
+// WrapChannelString wraps a ChannelExecutor[string] to automatically convert from io streams.
+// This allows channel-based commands to work with the standard io-based framework.
+//
+// Example:
+//
+//	func (c command) Executor() gloo.CommandExecutor {
+//	    inputs := gloo.Inputs[gloo.File, flags](c)
+//	    return inputs.WrapChannelString(
+//	        gloo.ChannelLineTransform(func(line string) (string, bool) {
+//	            return c.process(line), true
+//	        }).ChannelExecutor(),
+//	    )
+//	}
+func (inputs Inputs[T, O]) WrapChannelString(executor ChannelExecutor[string]) CommandExecutor {
+	return inputs.Wrap(channelToIOAdapter(executor))
+}
+
+// WrapChannelBytes wraps a ChannelExecutor[[]byte] to automatically convert from io streams.
+func (inputs Inputs[T, O]) WrapChannelBytes(executor ChannelExecutor[[]byte]) CommandExecutor {
+	return inputs.Wrap(channelToIOAdapter(executor))
+}
+
+// ToChannelString converts the input readers to a channel of Row[string].
+// This is useful for commands that want to use channels internally.
+//
+// Example:
+//
+//	func (c command) Executor() gloo.CommandExecutor {
+//	    inputs := gloo.Inputs[gloo.File, flags](c)
+//	    return func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
+//	        ch := make(chan Row[string], 100)
+//	        go inputs.ToChannelString(ctx, stdin, ch)
+//	        for row := range ch {
+//	            fmt.Fprintln(stdout, row.Data)
+//	        }
+//	        return nil
+//	    }
+//	}
+func (inputs Inputs[T, O]) ToChannelString(ctx context.Context, stdin io.Reader, out chan<- Row[string]) error {
+	input := inputs.Reader(stdin)
+	return readerToChannel(ctx, input, out)
+}
+
+// ToChannelBytes converts the input readers to a channel of Row[[]byte].
+func (inputs Inputs[T, O]) ToChannelBytes(ctx context.Context, stdin io.Reader, out chan<- Row[[]byte]) error {
+	input := inputs.Reader(stdin)
+	return byteReaderToChannel(ctx, input, out)
+}
+
 // Close closes all opened file handles. Call this when done with the inputs.
 //
 // Example:

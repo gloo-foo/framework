@@ -307,3 +307,104 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 		}
 	}
 }
+
+// ============================================================================
+// Rill-Based Helpers
+//
+// These functions provide direct wrappers around rill's built-in functions
+// for better performance and concurrency control.
+// ============================================================================
+
+// RillMap wraps rill.Map to provide a ChannelExecutor that uses rill's concurrent map implementation.
+// This is more efficient than custom implementations for parallel transformations.
+//
+// Example:
+//
+//transform := RillMap(4, func(line string) (string, error) {
+//    return strings.ToUpper(line), nil
+//})
+//pipeline := gloo.Pipeline(transform)
+//gloo.Run(pipeline)
+func RillMap[A, B any](n int, f func(A) (B, error)) func(context.Context, <-chan rill.Try[A], chan<- rill.Try[B]) error {
+return func(ctx context.Context, in <-chan rill.Try[A], out chan<- rill.Try[B]) error {
+// Use rill.Map to transform the stream
+mapped := rill.Map(in, n, f)
+
+// Forward all items to output channel
+for item := range mapped {
+select {
+case <-ctx.Done():
+rill.Discard(mapped)
+return ctx.Err()
+case out <- item:
+if item.Error != nil {
+rill.Discard(mapped)
+return item.Error
+}
+}
+}
+return nil
+}
+}
+
+// RillFilter wraps rill.Filter to provide a ChannelExecutor that uses rill's concurrent filter implementation.
+//
+// Example:
+//
+//filter := RillFilter(2, func(line string) (bool, error) {
+//    return strings.Contains(line, "ERROR"), nil
+//})
+//pipeline := gloo.Pipeline(filter)
+//gloo.Run(pipeline)
+func RillFilter[T any](n int, f func(T) (bool, error)) ChannelExecutor[T] {
+return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
+// Use rill.Filter to filter the stream
+filtered := rill.Filter(in, n, f)
+
+// Forward all items to output channel
+for item := range filtered {
+select {
+case <-ctx.Done():
+rill.Discard(filtered)
+return ctx.Err()
+case out <- item:
+if item.Error != nil {
+rill.Discard(filtered)
+return item.Error
+}
+}
+}
+return nil
+}
+}
+
+// RillOrderedMap wraps rill.OrderedMap for ordered concurrent transformations.
+// This preserves the order of items from input to output, which is useful for
+// maintaining line order in text processing.
+//
+// Example:
+//
+//transform := RillOrderedMap(4, func(line string) (string, error) {
+//    return processLine(line), nil
+//})
+func RillOrderedMap[A, B any](n int, f func(A) (B, error)) func(context.Context, <-chan rill.Try[A], chan<- rill.Try[B]) error {
+return func(ctx context.Context, in <-chan rill.Try[A], out chan<- rill.Try[B]) error {
+// Use rill.OrderedMap to transform the stream while preserving order
+mapped := rill.OrderedMap(in, n, f)
+
+// Forward all items to output channel
+for item := range mapped {
+select {
+case <-ctx.Done():
+rill.Discard(mapped)
+return ctx.Err()
+case out <- item:
+if item.Error != nil {
+rill.Discard(mapped)
+return item.Error
+}
+}
+}
+return nil
+}
+}

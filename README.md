@@ -1,10 +1,19 @@
 # Gloo Framework
 
-A Go framework for building composable Unix-style command-line tools.
+A Go framework for building composable Unix-style command-line tools, powered by [github.com/destel/rill](https://github.com/destel/rill) for concurrent stream processing.
 
 ## What is Gloo?
 
-Gloo lets you build commands that work like traditional Unix tools - they read from stdin, write to stdout, and can be piped together. Commands are type-safe, composable, and easy to test.
+Gloo lets you build commands that work like traditional Unix tools - they read from stdin, write to stdout, and can be piped together. Commands are type-safe, composable, easy to test, and can leverage powerful concurrent processing capabilities.
+
+### Key Features
+
+- **Unix-style composition**: Pipe commands together like shell scripts
+- **Type-safe pipelines**: Process strings, bytes, or custom types
+- **Concurrent processing**: Built on rill for efficient parallel execution
+- **Order preservation**: Maintain sequence when needed
+- **Automatic error handling**: Errors propagate through pipelines
+- **Zero external dependencies**: Besides rill, which itself has zero dependencies
 
 ## Quick Start
 

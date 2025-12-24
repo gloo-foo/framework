@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 
+	"github.com/destel/rill"
 	gloo "github.com/gloo-foo/framework"
 )
 
@@ -25,7 +26,7 @@ type ChannelStatefulLineTransformFunc[T any] func(rowNum int64, data T) (output 
 type ChannelAccumulateAndProcessFunc[T any] func(rows []T) []T
 
 // ChannelAccumulateAndOutputFunc collects all rows, processes them, and outputs directly to the channel.
-type ChannelAccumulateAndOutputFunc[T any] func(rows []T, out chan<- gloo.Row[T]) error
+type ChannelAccumulateAndOutputFunc[T any] func(rows []T, out chan<- rill.Try[T]) error
 
 // ============================================================================
 // Channel Helper Functions
@@ -66,7 +67,7 @@ type channelLineTransformCommand[T any] struct {
 }
 
 func (c *channelLineTransformCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -75,13 +76,13 @@ func (c *channelLineTransformCommand[T]) ChannelExecutor() gloo.ChannelExecutor[
 				if !ok {
 					return nil
 				}
-				if row.Err != nil {
+				if row.Error != nil {
 					out <- row
-					return row.Err
+					return row.Error
 				}
-				output, emit := c.fn(row.Data)
+				output, emit := c.fn(row.Value)
 				if emit {
-					out <- gloo.Row[T]{Data: output}
+					out <- rill.Try[T]{Value: output}
 				}
 			}
 		}
@@ -121,7 +122,7 @@ type channelStatefulLineCommand[T any] struct {
 }
 
 func (c *channelStatefulLineCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		rowNum := int64(0)
 		for {
 			select {
@@ -131,14 +132,14 @@ func (c *channelStatefulLineCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T
 				if !ok {
 					return nil
 				}
-				if row.Err != nil {
+				if row.Error != nil {
 					out <- row
-					return row.Err
+					return row.Error
 				}
 				rowNum++
-				output, emit := c.fn(rowNum, row.Data)
+				output, emit := c.fn(rowNum, row.Value)
 				if emit {
-					out <- gloo.Row[T]{Data: output}
+					out <- rill.Try[T]{Value: output}
 				}
 			}
 		}
@@ -181,7 +182,7 @@ type channelAccumulatorCommand[T any] struct {
 }
 
 func (c *channelAccumulatorCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Collect all rows
 		var rows []T
 		for {
@@ -196,15 +197,15 @@ func (c *channelAccumulatorCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T]
 						select {
 						case <-ctx.Done():
 							return ctx.Err()
-						case out <- gloo.Row[T]{Data: data}:
+						case out <- rill.Try[T]{Value: data}:
 						}
 					}
 					return nil
 				}
-				if row.Err != nil {
-					return row.Err
+				if row.Error != nil {
+					return row.Error
 				}
-				rows = append(rows, row.Data)
+				rows = append(rows, row.Value)
 			}
 		}
 	}
@@ -251,7 +252,7 @@ type channelAccumulateOutputCommand[T any] struct {
 }
 
 func (c *channelAccumulateOutputCommand[T]) ChannelExecutor() gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Collect all rows
 		var rows []T
 		for {
@@ -263,10 +264,10 @@ func (c *channelAccumulateOutputCommand[T]) ChannelExecutor() gloo.ChannelExecut
 					// Process and output with custom logic
 					return c.fn(rows, out)
 				}
-				if row.Err != nil {
-					return row.Err
+				if row.Error != nil {
+					return row.Error
 				}
-				rows = append(rows, row.Data)
+				rows = append(rows, row.Value)
 			}
 		}
 	}
@@ -302,8 +303,8 @@ func (c *channelAccumulateOutputCommand[T]) ChannelExecutor() gloo.ChannelExecut
 //	        },
 //	    )
 //	}
-func ChannelTransform[TIn, TOut any](fn func(TIn) (TOut, bool, error)) func(context.Context, <-chan gloo.Row[TIn], chan<- gloo.Row[TOut]) error {
-	return func(ctx context.Context, in <-chan gloo.Row[TIn], out chan<- gloo.Row[TOut]) error {
+func ChannelTransform[TIn, TOut any](fn func(TIn) (TOut, bool, error)) func(context.Context, <-chan rill.Try[TIn], chan<- rill.Try[TOut]) error {
+	return func(ctx context.Context, in <-chan rill.Try[TIn], out chan<- rill.Try[TOut]) error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -312,17 +313,17 @@ func ChannelTransform[TIn, TOut any](fn func(TIn) (TOut, bool, error)) func(cont
 				if !ok {
 					return nil
 				}
-				if row.Err != nil {
-					out <- gloo.Row[TOut]{Err: row.Err}
-					return row.Err
+				if row.Error != nil {
+					out <- rill.Try[TOut]{Error: row.Error}
+					return row.Error
 				}
-				output, emit, err := fn(row.Data)
+				output, emit, err := fn(row.Value)
 				if err != nil {
-					out <- gloo.Row[TOut]{Err: err}
+					out <- rill.Try[TOut]{Error: err}
 					return err
 				}
 				if emit {
-					out <- gloo.Row[TOut]{Data: output}
+					out <- rill.Try[TOut]{Value: output}
 				}
 			}
 		}
@@ -353,8 +354,8 @@ func ChannelTransform[TIn, TOut any](fn func(TIn) (TOut, bool, error)) func(cont
 //	func Tee(outputs ...chan<- gloo.Row[string]) ChannelExecutor[string] {
 //	    return ChannelFanOut(outputs...)  // OK: strings are immutable
 //	}
-func ChannelFanOut[T any](outputs ...chan<- gloo.Row[T]) gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+func ChannelFanOut[T any](outputs ...chan<- rill.Try[T]) gloo.ChannelExecutor[T] {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -387,19 +388,19 @@ func ChannelFanOut[T any](outputs ...chan<- gloo.Row[T]) gloo.ChannelExecutor[T]
 //	    return func(ctx context.Context, _ <-chan gloo.Row[string], out chan<- gloo.Row[string]) error {
 //	        inputs := make([]<-chan gloo.Row[string], len(readers))
 //	        for i, r := range readers {
-//	            ch := make(chan Row[string], 100)
+//	            ch := make(chan rill.Try[string], 100)
 //	            inputs[i] = ch
 //	            go ReaderToChannel(ctx, r, ch)
 //	        }
 //	        return ChannelMerge(inputs...)(ctx, nil, out)
 //	    }
 //	}
-func ChannelMerge[T any](inputs ...<-chan gloo.Row[T]) gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, _ <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+func ChannelMerge[T any](inputs ...<-chan rill.Try[T]) gloo.ChannelExecutor[T] {
+	return func(ctx context.Context, _ <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Use a single goroutine per input to forward to output
 		done := make(chan struct{})
 		for _, input := range inputs {
-			go func(in <-chan gloo.Row[T]) {
+			go func(in <-chan rill.Try[T]) {
 				for {
 					select {
 					case <-ctx.Done():
@@ -433,8 +434,8 @@ func ChannelMerge[T any](inputs ...<-chan gloo.Row[T]) gloo.ChannelExecutor[T] {
 // Example:
 //
 //	func WithBuffer(size int, exec ChannelExecutor[string]) ChannelExecutor[string] {
-//	    return func(ctx context.Context, in <-chan gloo.Row[string], out chan<- gloo.Row[string]) error {
-//	        buffered := make(chan Row[string], size)
+//	    return func(ctx context.Context, in <-chan rill.Try[string], out chan<- rill.Try[string]) error {
+//	        buffered := make(chan rill.Try[string], size)
 //	        go func() {
 //	            exec(ctx, in, buffered)
 //	            close(buffered)
@@ -446,7 +447,7 @@ func ChannelMerge[T any](inputs ...<-chan gloo.Row[T]) gloo.ChannelExecutor[T] {
 //	    }
 //	}
 func ChannelBuffer[T any](size int) gloo.ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan gloo.Row[T], out chan<- gloo.Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		for {
 			select {
 			case <-ctx.Done():

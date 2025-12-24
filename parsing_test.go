@@ -40,10 +40,10 @@ func TestRowParser_Interface(t *testing.T) {
 
 	var results []ParsedLog
 	for row := range ch {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 3 {
@@ -80,10 +80,10 @@ func TestRowParser_WithPipeline(t *testing.T) {
 	// Collect results
 	var results []ParsedLog
 	for row := range outputCh {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 2 {
@@ -119,10 +119,10 @@ func TestReaderToChannelWithParser(t *testing.T) {
 
 	var results []CSVRecord
 	for row := range ch {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 3 {
@@ -160,10 +160,10 @@ func TestTextUnmarshaler_Interface(t *testing.T) {
 
 	var results []Temperature
 	for row := range ch {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 3 {
@@ -220,11 +220,11 @@ func TestAutomatic_Parsing_WithCommand(t *testing.T) {
 	// Collect output
 	var count int
 	for row := range outputCh {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error: %v", row.Error)
 		}
 		count++
-		_, _ = fmt.Fprintf(output, "%s: %s\n", row.Data.Level, row.Data.Message)
+		_, _ = fmt.Fprintf(output, "%s: %s\n", row.Value.Level, row.Value.Message)
 	}
 	<-doneCh
 
@@ -251,7 +251,7 @@ func TestRowParser_ParseErrors(t *testing.T) {
 
 	var successes, errors int
 	for row := range ch {
-		if row.Err != nil {
+		if row.Error != nil {
 			errors++
 		} else {
 			successes++

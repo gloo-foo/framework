@@ -3,6 +3,8 @@ package gloo
 import (
 	"context"
 	"os"
+
+	"github.com/destel/rill"
 )
 
 // ============================================================================
@@ -36,9 +38,9 @@ func Pipe[T any](first ChannelExecutor[T], rest ...ChannelExecutor[T]) ChannelEx
 
 	if len(executors) == 2 {
 		// Optimized case for two executors
-		return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+		return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 			// Create intermediate channel
-			intermediate := make(chan Row[T], 100)
+			intermediate := make(chan rill.Try[T], 100)
 
 			// Start first executor
 			firstDone := make(chan error, 1)
@@ -165,27 +167,27 @@ func MustRunChannel[T any](cmd ChannelCommand[T]) {
 //	    return ExpensiveOperation(line), true, nil  // OK: strings immutable
 //	})
 func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Create work queue
-		work := make(chan Row[T], workers*2)
-		results := make(chan Row[T], workers*2)
+		work := make(chan rill.Try[T], workers*2)
+		results := make(chan rill.Try[T], workers*2)
 
 		// Start workers
 		workerDone := make(chan struct{})
 		for i := 0; i < workers; i++ {
 			go func() {
 				for row := range work {
-					if row.Err != nil {
+					if row.Error != nil {
 						results <- row
 						continue
 					}
-					output, emit, err := fn(row.Data)
+					output, emit, err := fn(row.Value)
 					if err != nil {
-						results <- Row[T]{Err: err}
+						results <- rill.Try[T]{Error: err}
 						continue
 					}
 					if emit {
-						results <- Row[T]{Data: output}
+						results <- rill.Try[T]{Value: output}
 					}
 				}
 				workerDone <- struct{}{}
@@ -201,8 +203,8 @@ func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecuto
 					collectorDone <- ctx.Err()
 					return
 				case out <- row:
-					if row.Err != nil {
-						collectorDone <- row.Err
+					if row.Error != nil {
+						collectorDone <- row.Error
 						return
 					}
 				}
@@ -258,7 +260,7 @@ func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecuto
 //	    return batch, nil
 //	})
 func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		batch := make([]T, 0, size)
 
 		flushBatch := func() error {
@@ -273,7 +275,7 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case out <- Row[T]{Data: result}:
+				case out <- rill.Try[T]{Value: result}:
 				}
 			}
 			batch = batch[:0]
@@ -288,14 +290,14 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 				if !ok {
 					return flushBatch()
 				}
-				if row.Err != nil {
+				if row.Error != nil {
 					if err := flushBatch(); err != nil {
 						return err
 					}
 					out <- row
-					return row.Err
+					return row.Error
 				}
-				batch = append(batch, row.Data)
+				batch = append(batch, row.Value)
 				if len(batch) >= size {
 					if err := flushBatch(); err != nil {
 						return err

@@ -3,6 +3,8 @@ package gloo
 import (
 	"context"
 	"os"
+
+	"github.com/destel/rill"
 )
 
 // ============================================================================
@@ -36,9 +38,9 @@ func Pipe[T any](first ChannelExecutor[T], rest ...ChannelExecutor[T]) ChannelEx
 
 	if len(executors) == 2 {
 		// Optimized case for two executors
-		return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+		return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 			// Create intermediate channel
-			intermediate := make(chan Row[T], 100)
+			intermediate := make(chan rill.Try[T], 100)
 
 			// Start first executor
 			firstDone := make(chan error, 1)
@@ -144,12 +146,14 @@ func MustRunChannel[T any](cmd ChannelCommand[T]) {
 // Always return a NEW value instead of modifying the input.
 //
 // SAFE:
-//   result := process(input)  // Read input, create new output
-//   return result, true, nil
+//
+//	result := process(input)  // Read input, create new output
+//	return result, true, nil
 //
 // UNSAFE:
-//   input.Field = "modified"  // Mutating input - DON'T DO THIS!
-//   return input, true, nil
+//
+//	input.Field = "modified"  // Mutating input - DON'T DO THIS!
+//	return input, true, nil
 //
 // Treat the input parameter as READ-ONLY. Any mutation may cause
 // undefined behavior or data races.
@@ -165,27 +169,27 @@ func MustRunChannel[T any](cmd ChannelCommand[T]) {
 //	    return ExpensiveOperation(line), true, nil  // OK: strings immutable
 //	})
 func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Create work queue
-		work := make(chan Row[T], workers*2)
-		results := make(chan Row[T], workers*2)
+		work := make(chan rill.Try[T], workers*2)
+		results := make(chan rill.Try[T], workers*2)
 
 		// Start workers
 		workerDone := make(chan struct{})
 		for i := 0; i < workers; i++ {
 			go func() {
 				for row := range work {
-					if row.Err != nil {
+					if row.Error != nil {
 						results <- row
 						continue
 					}
-					output, emit, err := fn(row.Data)
+					output, emit, err := fn(row.Value)
 					if err != nil {
-						results <- Row[T]{Err: err}
+						results <- rill.Try[T]{Error: err}
 						continue
 					}
 					if emit {
-						results <- Row[T]{Data: output}
+						results <- rill.Try[T]{Value: output}
 					}
 				}
 				workerDone <- struct{}{}
@@ -201,8 +205,8 @@ func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecuto
 					collectorDone <- ctx.Err()
 					return
 				case out <- row:
-					if row.Err != nil {
-						collectorDone <- row.Err
+					if row.Error != nil {
+						collectorDone <- row.Error
 						return
 					}
 				}
@@ -258,7 +262,7 @@ func ParallelMap[T any](workers int, fn func(T) (T, bool, error)) ChannelExecuto
 //	    return batch, nil
 //	})
 func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		batch := make([]T, 0, size)
 
 		flushBatch := func() error {
@@ -273,7 +277,7 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case out <- Row[T]{Data: result}:
+				case out <- rill.Try[T]{Value: result}:
 				}
 			}
 			batch = batch[:0]
@@ -288,14 +292,14 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 				if !ok {
 					return flushBatch()
 				}
-				if row.Err != nil {
+				if row.Error != nil {
 					if err := flushBatch(); err != nil {
 						return err
 					}
 					out <- row
-					return row.Err
+					return row.Error
 				}
-				batch = append(batch, row.Data)
+				batch = append(batch, row.Value)
 				if len(batch) >= size {
 					if err := flushBatch(); err != nil {
 						return err
@@ -303,5 +307,108 @@ func Batch[T any](size int, fn func([]T) ([]T, error)) ChannelExecutor[T] {
 				}
 			}
 		}
+	}
+}
+
+// ============================================================================
+// Rill-Based Helpers
+//
+// These functions provide direct wrappers around rill's built-in functions
+// for better performance and concurrency control.
+// ============================================================================
+
+// RillMap wraps rill.Map to provide a ChannelExecutor that uses rill's concurrent map implementation.
+// This is more efficient than custom implementations for parallel transformations.
+//
+// Example:
+//
+//	transform := RillMap(4, func(line string) (string, error) {
+//	   return strings.ToUpper(line), nil
+//	})
+//
+// pipeline := gloo.Pipeline(transform)
+// gloo.Run(pipeline)
+func RillMap[A, B any](n int, f func(A) (B, error)) func(context.Context, <-chan rill.Try[A], chan<- rill.Try[B]) error {
+	return func(ctx context.Context, in <-chan rill.Try[A], out chan<- rill.Try[B]) error {
+		// Use rill.Map to transform the stream
+		mapped := rill.Map(in, n, f)
+
+		// Forward all items to output channel
+		for item := range mapped {
+			select {
+			case <-ctx.Done():
+				rill.Discard(mapped)
+				return ctx.Err()
+			case out <- item:
+				if item.Error != nil {
+					rill.Discard(mapped)
+					return item.Error
+				}
+			}
+		}
+		return nil
+	}
+}
+
+// RillFilter wraps rill.Filter to provide a ChannelExecutor that uses rill's concurrent filter implementation.
+//
+// Example:
+//
+//	filter := RillFilter(2, func(line string) (bool, error) {
+//	   return strings.Contains(line, "ERROR"), nil
+//	})
+//
+// pipeline := gloo.Pipeline(filter)
+// gloo.Run(pipeline)
+func RillFilter[T any](n int, f func(T) (bool, error)) ChannelExecutor[T] {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
+		// Use rill.Filter to filter the stream
+		filtered := rill.Filter(in, n, f)
+
+		// Forward all items to output channel
+		for item := range filtered {
+			select {
+			case <-ctx.Done():
+				rill.Discard(filtered)
+				return ctx.Err()
+			case out <- item:
+				if item.Error != nil {
+					rill.Discard(filtered)
+					return item.Error
+				}
+			}
+		}
+		return nil
+	}
+}
+
+// RillOrderedMap wraps rill.OrderedMap for ordered concurrent transformations.
+// This preserves the order of items from input to output, which is useful for
+// maintaining line order in text processing.
+//
+// Example:
+//
+//	transform := RillOrderedMap(4, func(line string) (string, error) {
+//	   return processLine(line), nil
+//	})
+func RillOrderedMap[A, B any](n int, f func(A) (B, error)) func(context.Context, <-chan rill.Try[A], chan<- rill.Try[B]) error {
+	return func(ctx context.Context, in <-chan rill.Try[A], out chan<- rill.Try[B]) error {
+		// Use rill.OrderedMap to transform the stream while preserving order
+		mapped := rill.OrderedMap(in, n, f)
+
+		// Forward all items to output channel
+		for item := range mapped {
+			select {
+			case <-ctx.Done():
+				rill.Discard(mapped)
+				return ctx.Err()
+			case out <- item:
+				if item.Error != nil {
+					rill.Discard(mapped)
+					return item.Error
+				}
+			}
+		}
+		return nil
 	}
 }

@@ -95,7 +95,7 @@ func TestChannelAccumulateAndOutput_WordCount(t *testing.T) {
 		for _, line := range lines {
 			wordCount += len(strings.Fields(line))
 		}
-		out <- gloo.Row[string]{Data: fmt.Sprintf("%d words", wordCount)}
+		out <- gloo.Row[string]{Value: fmt.Sprintf("%d words", wordCount)}
 		return nil
 	})
 
@@ -203,10 +203,10 @@ func TestChannelLineTransform_CustomType(t *testing.T) {
 	input := make(chan gloo.Row[Person], 10)
 	output := make(chan gloo.Row[Person], 10)
 
-	input <- gloo.Row[Person]{Data: Person{"Alice", 25}}
-	input <- gloo.Row[Person]{Data: Person{"Bob", 15}}
-	input <- gloo.Row[Person]{Data: Person{"Charlie", 30}}
-	input <- gloo.Row[Person]{Data: Person{"David", 10}}
+	input <- gloo.Row[Person]{Value: Person{"Alice", 25}}
+	input <- gloo.Row[Person]{Value: Person{"Bob", 15}}
+	input <- gloo.Row[Person]{Value: Person{"Charlie", 30}}
+	input <- gloo.Row[Person]{Value: Person{"David", 10}}
 	close(input)
 
 	ctx := context.Background()
@@ -221,10 +221,10 @@ func TestChannelLineTransform_CustomType(t *testing.T) {
 	// Collect results
 	var results []Person
 	for row := range output {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error in row: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error in row: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 2 {
@@ -252,9 +252,9 @@ func TestChannelTransform_TypeConversion(t *testing.T) {
 	input := make(chan gloo.Row[string], 10)
 	output := make(chan gloo.Row[Person], 10)
 
-	input <- gloo.Row[string]{Data: "Alice,25"}
-	input <- gloo.Row[string]{Data: "Bob,30"}
-	input <- gloo.Row[string]{Data: "Invalid"}
+	input <- gloo.Row[string]{Value: "Alice,25"}
+	input <- gloo.Row[string]{Value: "Bob,30"}
+	input <- gloo.Row[string]{Value: "Invalid"}
 	close(input)
 
 	ctx := context.Background()
@@ -268,10 +268,10 @@ func TestChannelTransform_TypeConversion(t *testing.T) {
 	// Collect results
 	var results []Person
 	for row := range output {
-		if row.Err != nil {
-			t.Fatalf("Unexpected error in row: %v", row.Err)
+		if row.Error != nil {
+			t.Fatalf("Unexpected error in row: %v", row.Error)
 		}
-		results = append(results, row.Data)
+		results = append(results, row.Value)
 	}
 
 	if len(results) != 2 {
@@ -297,7 +297,7 @@ func TestChannelExecutor_ContextCancellation(t *testing.T) {
 	// Create test data with many items
 	input := make(chan gloo.Row[string], 100)
 	for i := 0; i < 100; i++ {
-		input <- gloo.Row[string]{Data: fmt.Sprintf("line %d", i)}
+		input <- gloo.Row[string]{Value: fmt.Sprintf("line %d", i)}
 	}
 	close(input)
 
@@ -332,9 +332,9 @@ func TestChannelExecutor_ErrorPropagation(t *testing.T) {
 
 	// Create test data with error row
 	input := make(chan gloo.Row[string], 10)
-	input <- gloo.Row[string]{Data: "line1"}
-	input <- gloo.Row[string]{Err: fmt.Errorf("test error")}
-	input <- gloo.Row[string]{Data: "line3"}
+	input <- gloo.Row[string]{Value: "line1"}
+	input <- gloo.Row[string]{Error: fmt.Errorf("test error")}
+	input <- gloo.Row[string]{Value: "line3"}
 	close(input)
 
 	output := make(chan gloo.Row[string], 10)

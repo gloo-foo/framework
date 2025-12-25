@@ -6,6 +6,8 @@ import (
 	"encoding"
 	"fmt"
 	"io"
+
+	"github.com/destel/rill"
 )
 
 // ============================================================================
@@ -19,6 +21,8 @@ import (
 // Row represents a single unit of data flowing through a channel.
 // It can contain strings (for line-oriented processing), []byte, or any user-defined type.
 //
+// This is an alias for rill.Try[T] to maintain API compatibility while using rill internally.
+//
 // typ Parameters:
 //   - T: The type of data being passed (string, []byte, or custom types)
 //
@@ -26,8 +30,8 @@ import (
 // Row[T] is passed by value through channels, but if T contains pointers, slices,
 // or maps, multiple goroutines may share references to the same underlying data.
 //
-//   - In single-consumer pipelines: Safe to mutate Data (you own it)
-//   - With fan-out or parallel processing: Treat Data as READ-ONLY or copy explicitly
+//   - In single-consumer pipelines: Safe to mutate Value (you own it)
+//   - With fan-out or parallel processing: Treat Value as READ-ONLY or copy explicitly
 //   - Commands should be immutable after construction
 //
 // See THREADING.md for detailed threading model and best practices.
@@ -36,9 +40,9 @@ import (
 //
 //	type command struct { pattern string }
 //	func (c command) ChannelExecutor() ChannelExecutor[string] {
-//	    return func(ctx context.Context, in <-chan Row[string], out chan<- Row[string]) error {
+//	    return func(ctx context.Context, in <-chan rill.Try[string], out chan<- rill.Try[string]) error {
 //	        for row := range in {
-//	            if strings.Contains(row.Data, c.pattern) {
+//	            if strings.Contains(row.Value, c.pattern) {
 //	                out <- row  // Safe: strings immutable
 //	            }
 //	        }
@@ -55,19 +59,16 @@ import (
 //	}
 //
 //	func FilterByLevel(level string) ChannelExecutor[LogEntry] {
-//	    return func(ctx context.Context, in <-chan Row[LogEntry], out chan<- Row[LogEntry]) error {
+//	    return func(ctx context.Context, in <-chan rill.Try[LogEntry], out chan<- rill.Try[LogEntry]) error {
 //	        for row := range in {
-//	            if row.Data.Level == level {
+//	            if row.Value.Level == level {
 //	                out <- row  // Safe in linear pipeline
 //	            }
 //	        }
 //	        return nil
 //	    }
 //	}
-type Row[T any] struct {
-	Data T     // The actual data
-	Err  error // Optional error associated with this row
-}
+type Row[T any] = rill.Try[T]
 
 // ChannelExecutor is the function signature for channel-based command execution.
 // It receives context, input channel, and output channel.
@@ -80,7 +81,9 @@ type Row[T any] struct {
 //   - Process each Row and send results to the output channel
 //   - Return an error if processing fails
 //   - NOT close the output channel (the framework handles that)
-type ChannelExecutor[T any] func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error
+//
+// Note: This uses rill.Try[T] (aliased as Row[T]) for error handling.
+type ChannelExecutor[T any] func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error
 
 // ChannelCommand represents a channel-based executable command.
 // This is the channel equivalent of the Command interface.
@@ -148,13 +151,13 @@ type RowParser interface {
 //	ch := make(chan Row[LogEntry], 100)
 //	go ReaderToChannelParsed(ctx, reader, ch)
 //	for row := range ch {
-//	    if row.Err != nil {
-//	        log.Printf("Parse error: %v", row.Err)
+//	    if row.Error != nil {
+//	        log.Printf("Parse error: %v", row.Error)
 //	        continue
 //	    }
-//	    fmt.Printf("Level: %s, Message: %s\n", row.Data.Level, row.Data.Message)
+//	    fmt.Printf("Level: %s, Message: %s\n", row.Value.Level, row.Value.Message)
 //	}
-func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- Row[T]) error {
+func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- rill.Try[T]) error {
 	defer close(out)
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -179,7 +182,7 @@ func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- R
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case out <- Row[T]{Err: fmt.Errorf("parse error: %w", err)}:
+			case out <- rill.Try[T]{Error: fmt.Errorf("parse error: %w", err)}:
 				// Continue processing even on parse errors
 			}
 			continue
@@ -188,7 +191,7 @@ func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- R
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[T]{Data: data}:
+		case out <- rill.Try[T]{Value: data}:
 		}
 	}
 
@@ -196,7 +199,7 @@ func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- R
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[T]{Err: err}:
+		case out <- rill.Try[T]{Error: err}:
 		}
 		return err
 	}
@@ -223,7 +226,7 @@ func ReaderToChannelParsed[T any](ctx context.Context, r io.Reader, out chan<- R
 //
 //	ch := make(chan Row[LogEntry], 100)
 //	go ReaderToChannelWithParser(ctx, reader, ch, parser)
-func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan<- Row[T], parse func(string) (T, error)) error {
+func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan<- rill.Try[T], parse func(string) (T, error)) error {
 	defer close(out)
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -234,7 +237,7 @@ func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case out <- Row[T]{Err: fmt.Errorf("parse error: %w", err)}:
+			case out <- rill.Try[T]{Error: fmt.Errorf("parse error: %w", err)}:
 				// Continue processing even on parse errors
 			}
 			continue
@@ -243,7 +246,7 @@ func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[T]{Data: data}:
+		case out <- rill.Try[T]{Value: data}:
 		}
 	}
 
@@ -251,7 +254,7 @@ func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[T]{Err: err}:
+		case out <- rill.Try[T]{Error: err}:
 		}
 		return err
 	}
@@ -261,21 +264,21 @@ func ReaderToChannelWithParser[T any](ctx context.Context, r io.Reader, out chan
 // readerToChannel converts an io.Reader to a channel of Row[string] (line-oriented).
 // Each line from the reader becomes a Row[string] in the channel.
 // The channel is closed when the reader is exhausted or an error occurs.
-func readerToChannel(ctx context.Context, r io.Reader, out chan<- Row[string]) error {
+func readerToChannel(ctx context.Context, r io.Reader, out chan<- rill.Try[string]) error {
 	defer close(out)
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[string]{Data: scanner.Text()}:
+		case out <- rill.Try[string]{Value: scanner.Text()}:
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[string]{Err: err}:
+		case out <- rill.Try[string]{Error: err}:
 		}
 		return err
 	}
@@ -285,7 +288,7 @@ func readerToChannel(ctx context.Context, r io.Reader, out chan<- Row[string]) e
 // byteReaderToChannel converts an io.Reader to a channel of Row[[]byte] (line-oriented).
 // Each line from the reader becomes a Row[[]byte] in the channel.
 // The channel is closed when the reader is exhausted or an error occurs.
-func byteReaderToChannel(ctx context.Context, r io.Reader, out chan<- Row[[]byte]) error {
+func byteReaderToChannel(ctx context.Context, r io.Reader, out chan<- rill.Try[[]byte]) error {
 	defer close(out)
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -295,14 +298,14 @@ func byteReaderToChannel(ctx context.Context, r io.Reader, out chan<- Row[[]byte
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[[]byte]{Data: data}:
+		case out <- rill.Try[[]byte]{Value: data}:
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- Row[[]byte]{Err: err}:
+		case out <- rill.Try[[]byte]{Error: err}:
 		}
 		return err
 	}
@@ -311,7 +314,7 @@ func byteReaderToChannel(ctx context.Context, r io.Reader, out chan<- Row[[]byte
 
 // channelToWriter converts a channel of Row[string] to an io.Writer (line-oriented).
 // Each Row[string] is written as a line to the writer.
-func channelToWriter(ctx context.Context, in <-chan Row[string], w io.Writer) error {
+func channelToWriter(ctx context.Context, in <-chan rill.Try[string], w io.Writer) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -320,10 +323,10 @@ func channelToWriter(ctx context.Context, in <-chan Row[string], w io.Writer) er
 			if !ok {
 				return nil
 			}
-			if row.Err != nil {
-				return row.Err
+			if row.Error != nil {
+				return row.Error
 			}
-			if _, err := fmt.Fprintln(w, row.Data); err != nil {
+			if _, err := fmt.Fprintln(w, row.Value); err != nil {
 				return err
 			}
 		}
@@ -332,7 +335,7 @@ func channelToWriter(ctx context.Context, in <-chan Row[string], w io.Writer) er
 
 // byteChannelToWriter converts a channel of Row[[]byte] to an io.Writer (line-oriented).
 // Each Row[[]byte] is written as a line to the writer.
-func byteChannelToWriter(ctx context.Context, in <-chan Row[[]byte], w io.Writer) error {
+func byteChannelToWriter(ctx context.Context, in <-chan rill.Try[[]byte], w io.Writer) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -341,14 +344,13 @@ func byteChannelToWriter(ctx context.Context, in <-chan Row[[]byte], w io.Writer
 			if !ok {
 				return nil
 			}
-			if row.Err != nil {
-				return row.Err
+			if row.Error != nil {
+				return row.Error
 			}
-			if _, err := w.Write(row.Data); err != nil {
+			if _, err := w.Write(row.Value); err != nil {
 				return err
 			}
-			if _, err := w.Write([]byte("\n"),
-			); err != nil {
+			if _, err := w.Write([]byte("\n")); err != nil {
 				return err
 			}
 		}
@@ -365,8 +367,8 @@ func byteChannelToWriter(ctx context.Context, in <-chan Row[[]byte], w io.Writer
 func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 	return func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 		// Create channels
-		in := make(chan Row[T], 100)
-		out := make(chan Row[T], 100)
+		in := make(chan rill.Try[T], 100)
+		out := make(chan rill.Try[T], 100)
 
 		// Start reader goroutine
 		readerDone := make(chan error, 1)
@@ -384,7 +386,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 					case <-ctx.Done():
 						readerDone <- ctx.Err()
 						return
-					case in <- any(Row[string]{Data: scanner.Text()}).(Row[T]):
+					case in <- any(rill.Try[string]{Value: scanner.Text()}).(rill.Try[T]):
 					}
 				}
 				readerErr = scanner.Err()
@@ -398,7 +400,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 					case <-ctx.Done():
 						readerDone <- ctx.Err()
 						return
-					case in <- any(Row[[]byte]{Data: data}).(Row[T]):
+					case in <- any(rill.Try[[]byte]{Value: data}).(rill.Try[T]):
 					}
 				}
 				readerErr = scanner.Err()
@@ -427,7 +429,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 						case <-ctx.Done():
 							readerDone <- ctx.Err()
 							return
-						case in <- Row[T]{Err: parseErr}:
+						case in <- rill.Try[T]{Error: parseErr}:
 						}
 						continue
 					}
@@ -436,7 +438,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 					case <-ctx.Done():
 						readerDone <- ctx.Err()
 						return
-					case in <- Row[T]{Data: data}:
+					case in <- rill.Try[T]{Value: data}:
 					}
 				}
 				if readerErr == nil {
@@ -458,12 +460,12 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 			case string:
 				// For string type, write channel to stdout
 				for row := range out {
-					if row.Err != nil {
-						writerErr = row.Err
+					if row.Error != nil {
+						writerErr = row.Error
 						break
 					}
-					strRow := any(row).(Row[string])
-					if _, err := fmt.Fprintln(stdout, strRow.Data); err != nil {
+					strRow := any(row).(rill.Try[string])
+					if _, err := fmt.Fprintln(stdout, strRow.Value); err != nil {
 						writerErr = err
 						break
 					}
@@ -471,17 +473,16 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 			case []byte:
 				// For []byte type, write channel to stdout
 				for row := range out {
-					if row.Err != nil {
-						writerErr = row.Err
+					if row.Error != nil {
+						writerErr = row.Error
 						break
 					}
-					byteRow := any(row).(Row[[]byte])
-					if _, err := stdout.Write(byteRow.Data); err != nil {
+					byteRow := any(row).(rill.Try[[]byte])
+					if _, err := stdout.Write(byteRow.Value); err != nil {
 						writerErr = err
 						break
 					}
-					if _, err := stdout.Write([]byte("\n"),
-					); err != nil {
+					if _, err := stdout.Write([]byte("\n")); err != nil {
 						writerErr = err
 						break
 					}
@@ -514,7 +515,7 @@ func channelToIOAdapter[T any](chExec ChannelExecutor[T]) CommandExecutor {
 // This allows existing io-based commands to be used in channel pipelines.
 // Used internally when bridging IO and channel-based commands.
 func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
-	return func(ctx context.Context, in <-chan Row[T], out chan<- Row[T]) error {
+	return func(ctx context.Context, in <-chan rill.Try[T], out chan<- rill.Try[T]) error {
 		// Create pipes
 		pr, pw := io.Pipe()
 		defer pr.Close()
@@ -526,29 +527,28 @@ func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
 			switch any(zeroT).(type) {
 			case string:
 				for row := range in {
-					if row.Err != nil {
-						pw.CloseWithError(row.Err)
+					if row.Error != nil {
+						pw.CloseWithError(row.Error)
 						return
 					}
-					strRow := any(row).(Row[string])
-					if _, err := fmt.Fprintln(pw, strRow.Data); err != nil {
+					strRow := any(row).(rill.Try[string])
+					if _, err := fmt.Fprintln(pw, strRow.Value); err != nil {
 						pw.CloseWithError(err)
 						return
 					}
 				}
 			case []byte:
 				for row := range in {
-					if row.Err != nil {
-						pw.CloseWithError(row.Err)
+					if row.Error != nil {
+						pw.CloseWithError(row.Error)
 						return
 					}
-					byteRow := any(row).(Row[[]byte])
-					if _, err := pw.Write(byteRow.Data); err != nil {
+					byteRow := any(row).(rill.Try[[]byte])
+					if _, err := pw.Write(byteRow.Value); err != nil {
 						pw.CloseWithError(err)
 						return
 					}
-					if _, err := pw.Write([]byte("\n"),
-					); err != nil {
+					if _, err := pw.Write([]byte("\n")); err != nil {
 						pw.CloseWithError(err)
 						return
 					}
@@ -574,13 +574,13 @@ func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
 					select {
 					case <-ctx.Done():
 						return
-					case out <- any(Row[string]{Data: scanner.Text()}).(Row[T]):
+					case out <- any(rill.Try[string]{Value: scanner.Text()}).(rill.Try[T]):
 					}
 				}
 				if err := scanner.Err(); err != nil {
 					select {
 					case <-ctx.Done():
-					case out <- Row[T]{Err: err}:
+					case out <- rill.Try[T]{Error: err}:
 					}
 				}
 			case []byte:
@@ -591,13 +591,13 @@ func ioToChannelAdapter[T any](exec CommandExecutor) ChannelExecutor[T] {
 					select {
 					case <-ctx.Done():
 						return
-					case out <- any(Row[[]byte]{Data: data}).(Row[T]):
+					case out <- any(rill.Try[[]byte]{Value: data}).(rill.Try[T]):
 					}
 				}
 				if err := scanner.Err(); err != nil {
 					select {
 					case <-ctx.Done():
-					case out <- Row[T]{Err: err}:
+					case out <- rill.Try[T]{Error: err}:
 					}
 				}
 			}

@@ -2,6 +2,18 @@
 
 This reference documents the public API for **using** and **building** commands with the Gloo framework.
 
+## About Rill Integration
+
+The Gloo framework is built on top of [github.com/destel/rill](https://github.com/destel/rill), a powerful toolkit for composable concurrency in Go. Rill provides:
+
+- **Type-safe channels**: Using `rill.Try[T]` containers (aliased as `gloo.Row[T]`) for error handling
+- **Concurrent primitives**: Map, Filter, Batch, and more with built-in concurrency control
+- **Order preservation**: Ordered versions of functions when sequence matters
+- **Automatic error propagation**: Errors flow through pipelines naturally
+- **Resource management**: Proper goroutine cleanup and cancellation
+
+Commands can leverage rill's capabilities through wrapper functions like `RillMap`, `RillFilter`, and `RillOrderedMap`, or use the framework's higher-level helpers for common patterns.
+
 ## Using Commands
 
 ### Running Commands
@@ -290,6 +302,86 @@ func (c command) Executor() gloo.CommandExecutor {
         // Write matching lines to stdout
         return nil
     })
+}
+```
+
+## Rill-Based Helpers
+
+For advanced concurrent processing, the framework provides wrappers around rill's built-in functions:
+
+### RillMap
+
+Concurrent transformation using rill's Map function:
+
+```go
+func RillMap[A, B any](n int, f func(A) (B, error)) ChannelExecutor[A, B]
+```
+
+**Example:**
+
+```go
+// Transform lines concurrently with 4 workers
+transform := gloo.RillMap(4, func(line string) (string, error) {
+    return strings.ToUpper(line), nil
+})
+pipeline := gloo.Pipeline(transform)
+gloo.Run(pipeline)
+```
+
+### RillFilter
+
+Concurrent filtering using rill's Filter function:
+
+```go
+func RillFilter[T any](n int, f func(T) (bool, error)) ChannelExecutor[T]
+```
+
+**Example:**
+
+```go
+// Filter lines concurrently with 2 workers
+filter := gloo.RillFilter(2, func(line string) (bool, error) {
+    return strings.Contains(line, "ERROR"), nil
+})
+```
+
+### RillOrderedMap
+
+Order-preserving concurrent transformation:
+
+```go
+func RillOrderedMap[A, B any](n int, f func(A) (B, error)) ChannelExecutor[A, B]
+```
+
+**Example:**
+
+```go
+// Transform while preserving line order
+transform := gloo.RillOrderedMap(4, func(line string) (string, error) {
+    return processLine(line), nil
+})
+```
+
+### Row[T] Type
+
+The framework uses rill.Try[T] (aliased as gloo.Row[T]) for error handling in channels:
+
+```go
+type Row[T any] = rill.Try[T]
+
+// Access fields:
+row.Value  // The actual data
+row.Error  // Optional error
+```
+
+**Example:**
+
+```go
+for row := range channel {
+    if row.Error != nil {
+        return row.Error
+    }
+    process(row.Value)
 }
 ```
 

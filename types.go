@@ -3,6 +3,8 @@ package gloo
 import (
 	"context"
 	"io"
+
+	"github.com/destel/rill"
 )
 
 // ============================================================================
@@ -149,21 +151,21 @@ func (inputs Inputs[T, O]) WrapChannelBytes(executor ChannelExecutor[[]byte]) Co
 //	func (c command) Executor() gloo.CommandExecutor {
 //	    inputs := gloo.Inputs[gloo.File, flags](c)
 //	    return func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
-//	        ch := make(chan Row[string], 100)
+//	        ch := make(chan rill.Try[string], 100)
 //	        go inputs.ToChannelString(ctx, stdin, ch)
 //	        for row := range ch {
-//	            fmt.Fprintln(stdout, row.Data)
+//	            fmt.Fprintln(stdout, row.Value)
 //	        }
 //	        return nil
 //	    }
 //	}
-func (inputs Inputs[T, O]) ToChannelString(ctx context.Context, stdin io.Reader, out chan<- Row[string]) error {
+func (inputs Inputs[T, O]) ToChannelString(ctx context.Context, stdin io.Reader, out chan<- rill.Try[string]) error {
 	input := inputs.Reader(stdin)
 	return readerToChannel(ctx, input, out)
 }
 
 // ToChannelBytes converts the input readers to a channel of Row[[]byte].
-func (inputs Inputs[T, O]) ToChannelBytes(ctx context.Context, stdin io.Reader, out chan<- Row[[]byte]) error {
+func (inputs Inputs[T, O]) ToChannelBytes(ctx context.Context, stdin io.Reader, out chan<- rill.Try[[]byte]) error {
 	input := inputs.Reader(stdin)
 	return byteReaderToChannel(ctx, input, out)
 }

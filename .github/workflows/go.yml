@@ -1,0 +1,89 @@
+# Managed by nicerobot/tools.repository (distribute-build)
+name: go
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "Makefile.local"
+      - ".golangci.yaml"
+      - ".golangci.override.yml"
+      - ".stickler.yaml"
+      - ".goreleaser.yaml"
+      - ".goreleaser.yaml"
+      - ".standards.yaml"
+      - ".github/workflows/go.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "Makefile.local"
+      - ".golangci.yaml"
+      - ".golangci.override.yml"
+      - ".stickler.yaml"
+      - ".goreleaser.yaml"
+      - ".goreleaser.yaml"
+      - ".standards.yaml"
+      - ".github/workflows/go.yml"
+  schedule:
+    - cron: "45 3 7 * *"
+  workflow_dispatch:
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  go:
+    # A scheduled run re-validates against the floating ci/go@v2 tool image, the
+    # latest Go patch, and the current CVE database with no push. distribute
+    # substitutes the per-repo cron above; the guard skips forks (and is a no-op
+    # for push / pull_request, whose event name is never "schedule").
+    if: github.event_name != 'schedule' || github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: nicerobot/tools.build/ci/go@v2
+        env:
+          # The wfpin analyzer inverts its rule for actions the RUNNER owns —
+          # somebody else's must be pinned, ours must float on the major tag —
+          # so it has to be told which accounts are ours. That list is private
+          # to whoever runs the gate and is never this repository's business:
+          # only the variable NAME appears here, and the value lives in the
+          # org's (or repo's) Actions variables, so it never enters a public
+          # repository. Unset simply leaves that half of the rule inert, which
+          # is why a fork or a stranger's checkout still gates cleanly.
+          YZE_WFPOLICY_OWNERS: ${{ vars.YZE_WFPOLICY_OWNERS }}
+
+  # Early warning, NOT a gate. The `go` job above is the gate, and it pins the
+  # toolchain via the ci/go@v2 image so every repo compiles identically. This job
+  # runs the same tests against Go tip on the schedule only, so a stdlib
+  # behavior change lands as a notification weeks before the next minor makes it
+  # a fleet-wide breakage. It is allowed to fail by design — tip breaks for
+  # reasons that are not ours — so it must never block a push or a merge.
+  #
+  # This is the ONLY place continue-on-error is legitimate in this workflow:
+  # putting it on the real gate would silence findings, which is forbidden.
+  go-next:
+    if: github.event_name == 'schedule' && github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          check-latest: true
+      - run: go test -shuffle=on ./...

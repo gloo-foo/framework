@@ -1,0 +1,3 @@
+[![actions](https://github.com/gloo-foo/framework/actions/workflows/actions.yml/badge.svg)](https://github.com/gloo-foo/framework/actions/workflows/actions.yml) [![docs](https://github.com/gloo-foo/framework/actions/workflows/docs.yml/badge.svg)](https://github.com/gloo-foo/framework/actions/workflows/docs.yml) [![go](https://github.com/gloo-foo/framework/actions/workflows/go.yml/badge.svg)](https://github.com/gloo-foo/framework/actions/workflows/go.yml) [![release](https://github.com/gloo-foo/framework/actions/workflows/release.yml/badge.svg)](https://github.com/gloo-foo/framework/actions/workflows/release.yml)
+
+[docs](https://gloo-foo.github.io/docs.framework/)
